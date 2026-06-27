@@ -1,0 +1,15 @@
+{
+  "name": "ai-chat-local",
+  "version": "1.0.0",
+  "description": "Local AI Character Chat - connects to Google Colab LLM Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "dotenv": "^16.4.5",
+    "uuid": "^10.0.0"
+  }
+}
