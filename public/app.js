@@ -49,7 +49,7 @@ async function loadConfig() {
     state.config = await api('GET', '/api/config');
     $('#cfg-base-url').value = state.config.baseUrl || '';
     $('#cfg-api-key').value = state.config.apiKey || 'sk-colab-local';
-    $('#cfg-model').value = state.config.modelName || 'claude-sonnet-4-5';
+    $('#cfg-model').value = state.config.modelName || 'character1';
 }
 
 async function saveConfig() {
@@ -319,10 +319,10 @@ function renderMessages(messages) {
         const time = m.timestamp ? formatTime(m.timestamp) : '';
         const avatar = m.role === 'user' ? '👤' : charAvatar;
         const isLastAssistant = m.role === 'assistant' && index === messages.length - 1;
-        
+
         let contentHtml = formatMessageContent(m.content);
         let alternatesHtml = '';
-        
+
         if (m.alternates && m.alternates.length > 1) {
             const total = m.alternates.length;
             const current = (m.selectedAlternate || 0) + 1;
@@ -349,7 +349,10 @@ function renderMessages(messages) {
                         ${regenerateBtn}
                     </div>
                     ${alternatesHtml}
-                    ${time ? `<div class="message-time">${time}</div>` : ''}
+                    <div class="message-meta">
+                        ${time ? `<span class="message-time">${time}</span>` : ''}
+                        <button class="message-action-btn" onclick="editMessage(${index})" title="Edit">✏️</button>
+                    </div>
                 </div>
             </div>`;
     }).join('');
@@ -388,7 +391,10 @@ function appendMessage(role, content, isLastAssistant = false) {
                 <div class="message-bubble" style="width:100%">${formatMessageContent(content)}</div>
                 ${regenerateBtn}
             </div>
-            <div class="message-time">${time}</div>
+            <div class="message-meta">
+                <span class="message-time">${time}</span>
+                <button class="message-action-btn" onclick="editMessage(${document.querySelectorAll('#chat-messages .message').length})" title="Edit">✏️</button>
+            </div>
         </div>`;
     container.appendChild(div);
     scrollToBottom();
@@ -458,10 +464,10 @@ async function sendMessage() {
 // ══════════════════════════════════════════════════════════
 
 let touchStartX = 0;
-window.handleTouchStart = function(e) {
+window.handleTouchStart = function (e) {
     touchStartX = e.changedTouches[0].screenX;
 };
-window.handleTouchEnd = function(e, element) {
+window.handleTouchEnd = function (e, element) {
     let touchEndX = e.changedTouches[0].screenX;
     if (touchStartX - touchEndX > 40) {
         element.classList.add('swiped-left');
@@ -470,29 +476,29 @@ window.handleTouchEnd = function(e, element) {
     }
 };
 
-window.regenerateLastMessage = async function() {
+window.regenerateLastMessage = async function () {
     if (!state.currentCharacterId || !state.currentChatId || state.sending) return;
-    
+
     state.sending = true;
     const btn = document.querySelector('.regenerate-btn');
     if (btn) btn.innerHTML = '<span class="spinner"></span>';
-    
+
     try {
         const result = await api('POST', '/api/chat/regenerate', {
             characterId: state.currentCharacterId,
             chatId: state.currentChatId
         });
-        
+
         if (result.error) {
             toast(result.error, 'error');
             return;
         }
-        
+
         const chat = await api('GET', `/api/chat/${state.currentChatId}`);
         if (chat && !chat.error) {
             renderMessages(chat.messages || []);
         }
-    } catch(err) {
+    } catch (err) {
         toast(`Error: ${err.message}`, 'error');
     } finally {
         state.sending = false;
@@ -500,26 +506,119 @@ window.regenerateLastMessage = async function() {
     }
 };
 
-window.changeAlternate = async function(msgIndex, delta) {
+window.changeAlternate = async function (msgIndex, delta) {
     const chat = await api('GET', `/api/chat/${state.currentChatId}`);
     if (!chat || chat.error) return;
     const msg = chat.messages[msgIndex];
     if (!msg || !msg.alternates) return;
-    
+
     let sel = msg.selectedAlternate || 0;
     sel += delta;
     if (sel < 0) sel = 0;
     if (sel >= msg.alternates.length) sel = msg.alternates.length - 1;
-    
+
     msg.selectedAlternate = sel;
-    
+
     // Optimistic re-render
     renderMessages(chat.messages);
-    
+
     await api('PUT', `/api/chat/${state.currentChatId}/alternate`, {
         messageIndex: msgIndex,
         selectedAlternate: sel
     });
+};
+
+window.editMessage = async function (index) {
+    const chat = await api('GET', `/api/chat/${state.currentChatId}`);
+    if (!chat || chat.error) return;
+    const msg = chat.messages[index];
+    if (!msg) return;
+
+    const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
+    if (!messageDiv) return;
+
+    const msgEl = messageDiv.querySelector('.message-bubble-container');
+    const metaEl = messageDiv.querySelector('.message-meta');
+    const alternatesEl = messageDiv.querySelector('.alternate-nav');
+
+    const originalContent = msg.alternates ? (msg.alternates[msg.selectedAlternate || 0] || msg.content) : msg.content;
+
+    if (msgEl) msgEl.style.display = 'none';
+    if (metaEl) metaEl.style.display = 'none';
+    if (alternatesEl) alternatesEl.style.display = 'none';
+
+    const editContainer = document.createElement('div');
+    editContainer.className = 'message-edit-container';
+    editContainer.id = `edit-container-${index}`;
+    editContainer.innerHTML = `
+        <textarea class="message-edit-textarea" id="edit-textarea-${index}">${escapeHtml(originalContent)}</textarea>
+        <div class="message-edit-actions">
+            <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="cancelEdit(${index})">Batal</button>
+            <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="saveEdit(${index})">Simpan</button>
+        </div>
+    `;
+
+    msgEl.parentNode.insertBefore(editContainer, msgEl);
+
+    messageDiv.classList.add('is-editing');
+
+    const textarea = document.getElementById(`edit-textarea-${index}`);
+    const resizeTextarea = () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.max(120, textarea.scrollHeight) + 'px';
+    };
+    textarea.addEventListener('input', resizeTextarea);
+    setTimeout(resizeTextarea, 0);
+};
+
+window.cancelEdit = function (index) {
+    const editContainer = document.getElementById(`edit-container-${index}`);
+    if (editContainer) editContainer.remove();
+
+    const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
+    if (!messageDiv) return;
+
+    const msgEl = messageDiv.querySelector('.message-bubble-container');
+    const metaEl = messageDiv.querySelector('.message-meta');
+    const alternatesEl = messageDiv.querySelector('.alternate-nav');
+
+    if (msgEl) msgEl.style.display = '';
+    if (metaEl) metaEl.style.display = 'flex';
+    if (alternatesEl) alternatesEl.style.display = 'flex';
+
+    messageDiv.classList.remove('is-editing');
+};
+
+window.saveEdit = async function (index) {
+    const textarea = document.getElementById(`edit-textarea-${index}`);
+    if (!textarea) return;
+
+    const newContent = textarea.value.trim();
+    if (!newContent) return cancelEdit(index);
+
+    const btn = textarea.nextElementSibling.querySelector('.btn-primary');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const result = await api('PUT', `/api/chat/${state.currentChatId}/message`, {
+            messageIndex: index,
+            content: newContent
+        });
+
+        if (result.error) {
+            toast(result.error, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Simpan';
+            return;
+        }
+
+        await loadChat(state.currentChatId);
+    } catch (err) {
+        toast(`Error: ${err.message}`, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Simpan';
+    }
 };
 
 // ══════════════════════════════════════════════════════════
@@ -808,10 +907,14 @@ function bindEvents() {
     $('#memory-new-event').addEventListener('keydown', (e) => { if (e.key === 'Enter') addMemoryEvent(); });
     $('#memory-new-pref-val').addEventListener('keydown', (e) => { if (e.key === 'Enter') addMemoryPref(); });
 
-    // Mobile menu
+    // Sidebar toggle
     $$('.mobile-menu-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            $('#sidebar').classList.toggle('open');
+            if (window.innerWidth <= 768) {
+                $('#sidebar').classList.toggle('open');
+            } else {
+                $('#sidebar').classList.toggle('closed');
+            }
         });
     });
 

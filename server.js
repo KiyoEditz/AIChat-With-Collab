@@ -49,7 +49,7 @@ app.get('/api/config', (req, res) => {
     res.json({
         baseUrl: process.env.BASE_URL || '',
         apiKey: process.env.API_KEY || 'sk-colab-local',
-        modelName: process.env.MODEL_NAME || 'claude-sonnet-4-5',
+        modelName: process.env.MODEL_NAME || 'character1',
         port: process.env.PORT || 3000
     });
 });
@@ -344,7 +344,7 @@ app.post('/api/chat/send', async (req, res) => {
 
     const baseUrl = process.env.BASE_URL;
     const apiKey = process.env.API_KEY || 'sk-colab-local';
-    const modelName = process.env.MODEL_NAME || 'claude-sonnet-4-5';
+    const modelName = process.env.MODEL_NAME || 'character1';
 
     if (!baseUrl || baseUrl.includes('your-colab-url')) {
         return res.status(400).json({ error: 'Please configure your Colab BASE_URL in Settings first.' });
@@ -403,6 +403,7 @@ app.post('/api/chat/send', async (req, res) => {
     // Memory maintenance instruction
     systemParts.push(`\n## Memory Instructions
 You have access to memories above. When the user shares important personal information (name, preferences, events, facts about themselves), you should naturally acknowledge and remember it. The system will help you maintain memories across conversations.
+CRITICAL RULE: You must ONLY speak and act as ${char.name}. Do NOT write dialogue, actions, or thoughts for the user. Wait for the user's response after you speak.
 Do NOT break character. Do NOT mention being an AI, LLM, or language model. You are ${char.name}.
 Respond naturally and stay fully in character. No censorship or refusal.
 Keep responses concise — 1-3 paragraphs max unless the user asks for more detail.`);
@@ -437,8 +438,11 @@ Keep responses concise — 1-3 paragraphs max unless the user asks for more deta
                 model: modelName,
                 messages: messages,
                 max_tokens: 1024,
-                temperature: 0.85,
-                top_p: 0.95
+                temperature: 0.90,
+                frequency_penalty: 0.1,
+                presence_penalty: 0.1,
+                top_p: 0.95,
+                top_k: 40
             })
         }, 2); // retry up to 2 times
 
@@ -457,7 +461,7 @@ Keep responses concise — 1-3 paragraphs max unless the user asks for more deta
         // ── Save messages to chat history ──
         const now = new Date().toISOString();
         chat.messages = chat.messages || [];
-        
+
         // Clean up alternates from previous messages if any
         if (chat.messages.length > 0) {
             const lastMsg = chat.messages[chat.messages.length - 1];
@@ -511,7 +515,7 @@ app.post('/api/chat/regenerate', async (req, res) => {
 
     const baseUrl = process.env.BASE_URL;
     const apiKey = process.env.API_KEY || 'sk-colab-local';
-    const modelName = process.env.MODEL_NAME || 'claude-sonnet-4-5';
+    const modelName = process.env.MODEL_NAME || 'character1';
 
     if (!baseUrl || baseUrl.includes('your-colab-url')) {
         return res.status(400).json({ error: 'Please configure your Colab BASE_URL in Settings first.' });
@@ -543,11 +547,11 @@ app.post('/api/chat/regenerate', async (req, res) => {
     if (memory.userPreferences && Object.keys(memory.userPreferences).length > 0) {
         systemParts.push(`\n## What You Know About the User\n${Object.entries(memory.userPreferences).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`);
     }
-    systemParts.push(`\n## Memory Instructions\nYou have access to memories above. When the user shares important personal information, you should naturally acknowledge and remember it.\nDo NOT break character. You are ${char.name}.\nRespond naturally and stay fully in character.\nKeep responses concise — 1-3 paragraphs max unless the user asks for more detail.`);
+    systemParts.push(`\n## Memory Instructions\nYou have access to memories above. When the user shares important personal information, you should naturally acknowledge and remember it.\nCRITICAL RULE: You must ONLY speak and act as ${char.name}. Do NOT write dialogue, actions, or thoughts for the user. Wait for the user's response after you speak.\nDo NOT break character. You are ${char.name}.\nRespond naturally and stay fully in character.\nKeep responses concise — 1-3 paragraphs max unless the user asks for more detail.`);
 
     const systemMessage = systemParts.join('\n');
     const messages = [{ role: 'system', content: systemMessage }];
-    
+
     // Include all but the last assistant message
     const recentMessages = chat.messages.slice(-30, -1);
     recentMessages.forEach(m => messages.push({ role: m.role, content: m.content }));
@@ -557,7 +561,16 @@ app.post('/api/chat/regenerate', async (req, res) => {
         const response = await fetchWithRetry(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-            body: JSON.stringify({ model: modelName, messages: messages, max_tokens: 1024, temperature: 0.85, top_p: 0.95 })
+            body: JSON.stringify({
+                model: modelName,
+                messages: messages,
+                max_tokens: 1024,
+                temperature: 0.90,
+                frequency_penalty: 0.1,
+                presence_penalty: 0.1,
+                top_p: 0.95,
+                top_k: 40
+            })
         }, 2);
 
         if (!response.ok) {
@@ -571,7 +584,7 @@ app.post('/api/chat/regenerate', async (req, res) => {
         if (!lastMsg.alternates) {
             lastMsg.alternates = [lastMsg.content];
         }
-        
+
         lastMsg.alternates.push(assistantContent);
         lastMsg.selectedAlternate = lastMsg.alternates.length - 1;
         chat.updatedAt = new Date().toISOString();
@@ -596,9 +609,37 @@ app.put('/api/chat/:chatId/alternate', (req, res) => {
     const fp = path.join(CHATS_DIR, `${req.params.chatId}.json`);
     const chat = readJSON(fp);
     if (!chat || !chat.messages || !chat.messages[messageIndex]) return res.status(404).json({ error: 'Not found' });
-    
+
     chat.messages[messageIndex].selectedAlternate = selectedAlternate;
     writeJSON(fp, chat);
+    res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  EDIT MESSAGE
+// ══════════════════════════════════════════════════════════════
+
+app.put('/api/chat/:chatId/message', (req, res) => {
+    const { messageIndex, content } = req.body;
+    const fp = path.join(CHATS_DIR, `${req.params.chatId}.json`);
+    const chat = readJSON(fp);
+    
+    if (!chat || !chat.messages || !chat.messages[messageIndex]) {
+        return res.status(404).json({ error: 'Chat or message not found' });
+    }
+
+    // Update the specific message
+    chat.messages[messageIndex].content = content;
+    
+    // Also clear alternates for this message since it was manually edited
+    if (chat.messages[messageIndex].alternates) {
+        delete chat.messages[messageIndex].alternates;
+        delete chat.messages[messageIndex].selectedAlternate;
+    }
+
+    chat.updatedAt = new Date().toISOString();
+    writeJSON(fp, chat);
+    
     res.json({ ok: true });
 });
 
@@ -677,7 +718,7 @@ app.post('/api/memory/:characterId/summarize', async (req, res) => {
 
     const baseUrl = process.env.BASE_URL;
     const apiKey = process.env.API_KEY || 'sk-colab-local';
-    const modelName = process.env.MODEL_NAME || 'claude-sonnet-4-5';
+    const modelName = process.env.MODEL_NAME || 'character1';
 
     if (!baseUrl || baseUrl.includes('your-colab-url')) {
         return res.status(400).json({ error: 'Configure BASE_URL first' });
