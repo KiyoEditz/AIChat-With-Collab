@@ -312,21 +312,6 @@ body {
     color: var(--text-primary);
 }
 
-.chat-item-delete {
-    opacity: 0;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 4px;
-    transition: all var(--transition-fast);
-}
-
-.chat-item:hover .chat-item-delete {
-    opacity: 1;
-}
-
 .chat-item-delete:hover {
     color: var(--danger);
     background: var(--danger-bg);
@@ -592,9 +577,7 @@ body {
     gap: 4px;
 }
 
-.mobile-menu-btn {
-    /* visible on desktop as well now */
-}
+/* .mobile-menu-btn is visible on desktop as well now */
 
 /* ═══ MESSAGES ═══ */
 .chat-messages {
@@ -726,7 +709,7 @@ body {
 }
 
 @media (hover: hover) {
-    .message-bubble-container:hover .regenerate-btn {
+    .regenerate-btn {
         opacity: 1;
         pointer-events: auto;
     }
@@ -1440,4 +1423,208 @@ select.form-input {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AVATAR UPLOAD
+   ═══════════════════════════════════════════════════════════ */
+.avatar-upload-group {
+    width: 120px;
+    flex-shrink: 0;
+}
+
+.avatar-upload-container {
+    position: relative;
+    width: 90px;
+    height: 90px;
+}
+
+.avatar-file-input {
+    display: none;
+}
+
+.avatar-preview {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    border: 2px dashed var(--border-hover);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.avatar-preview:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-primary-glow);
+}
+
+.avatar-preview.has-image {
+    border-style: solid;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 12px var(--accent-primary-glow);
+}
+
+.avatar-preview.has-image:hover {
+    border-color: var(--accent-secondary);
+    box-shadow: 0 0 18px var(--accent-primary-glow);
+}
+
+.avatar-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.avatar-remove-btn {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: white;
+    border: 2px solid var(--bg-secondary);
+    font-size: 0.65rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    z-index: 2;
+    line-height: 1;
+}
+
+.avatar-remove-btn:hover {
+    transform: scale(1.15);
+    background: #ef4444;
+}
+
+/* Avatar in character list (image support) */
+.character-item-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* Avatar in chat header (image support) */
+.chat-header-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* Avatar in messages (image support) */
+.message-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CHAT ITEM RENAME
+   ═══════════════════════════════════════════════════════════ */
+.chat-item-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.chat-item:hover .chat-item-actions {
+    opacity: 1;
+}
+
+.chat-item-edit,
+.chat-item-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    transition: all var(--transition-fast);
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+}
+
+.chat-item-edit:hover {
+    color: var(--accent-primary);
+    background: var(--accent-primary-glow);
+}
+
+.chat-item-rename-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+
+.chat-item-rename-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-primary-glow);
+}
+
+.chat-item-rename-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.chat-item-rename-actions button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chat-rename-save {
+    color: var(--success);
+}
+
+.chat-rename-save:hover {
+    background: rgba(52, 211, 153, 0.15);
+}
+
+.chat-rename-cancel {
+    color: var(--text-muted);
+}
+
+.chat-rename-cancel:hover {
+    color: var(--danger);
+    background: var(--danger-bg);
 }

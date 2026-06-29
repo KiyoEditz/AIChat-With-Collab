@@ -19,6 +19,35 @@ let state = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ── Avatar Helper ────────────────────────────────────────
+function getAvatarInnerHtml(avatar, name) {
+    if (avatar && avatar.startsWith('data:')) {
+        return `<img src="${avatar}" alt="${escapeHtml(name || 'avatar')}">`;
+    }
+    return avatar || (name ? name.charAt(0).toUpperCase() : 'A');
+}
+
+function updateAvatarPreview(avatarData) {
+    const preview = $('#avatar-preview');
+    const removeBtn = $('#avatar-remove-btn');
+    if (!preview || !removeBtn) return;
+    if (avatarData && avatarData.startsWith('data:')) {
+        preview.innerHTML = `<img src="${avatarData}" alt="avatar">`;
+        preview.classList.add('has-image');
+        removeBtn.style.display = 'flex';
+    } else {
+        preview.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span>Upload</span>`;
+        preview.classList.remove('has-image');
+        removeBtn.style.display = 'none';
+    }
+}
+
 // ── Init ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
@@ -111,7 +140,7 @@ function renderCharacterList() {
     list.innerHTML = state.characters.map(c => `
         <div class="character-item ${c.id === state.currentCharacterId ? 'active' : ''}"
              data-id="${c.id}" onclick="selectCharacter('${c.id}')">
-            <div class="character-item-avatar">${c.avatar || c.name.charAt(0).toUpperCase()}</div>
+            <div class="character-item-avatar">${getAvatarInnerHtml(c.avatar, c.name)}</div>
             <div class="character-item-info">
                 <div class="character-item-name">${escapeHtml(c.name)}</div>
                 <div class="character-item-desc">${escapeHtml((c.personality || '').substring(0, 50))}</div>
@@ -134,7 +163,7 @@ async function selectCharacter(id) {
 
     // Update chat header
     $('#chat-header-name').textContent = char.name;
-    $('#chat-header-avatar').textContent = char.avatar || char.name.charAt(0).toUpperCase();
+    $('#chat-header-avatar').innerHTML = getAvatarInnerHtml(char.avatar, char.name);
 
     // If there are existing chats, load the most recent one
     if (state.chats.length > 0) {
@@ -158,6 +187,8 @@ function openCharacterEditor(editId = null) {
     $('#char-edit-id').value = editId || '';
     $('#char-name').value = char ? char.name : '';
     $('#char-avatar').value = char ? (char.avatar || '') : '';
+    // Update avatar preview after modal opens
+    setTimeout(() => updateAvatarPreview($('#char-avatar').value), 50);
     $('#char-personality').value = char ? (char.personality || '') : '';
     $('#char-scenario').value = char ? (char.scenario || '') : '';
     $('#char-first-message').value = char ? (char.firstMessage || '') : '';
@@ -233,7 +264,10 @@ function renderChatList() {
              data-id="${c.id}" onclick="loadChat('${c.id}')">
             <span class="chat-item-icon">💬</span>
             <span class="chat-item-title">${escapeHtml(c.title)}</span>
-            <button class="chat-item-delete" onclick="event.stopPropagation(); deleteChat('${c.id}')" title="Delete">✕</button>
+            <div class="chat-item-actions">
+                <button class="chat-item-edit" onclick="event.stopPropagation(); startRenameChat('${c.id}')" title="Rename">✏️</button>
+                <button class="chat-item-delete" onclick="event.stopPropagation(); deleteChat('${c.id}')" title="Delete">✕</button>
+            </div>
         </div>
     `).join('');
 }
@@ -304,7 +338,7 @@ async function deleteChat(chatId) {
 function renderMessages(messages) {
     const container = $('#chat-messages');
     const char = state.characters.find(c => c.id === state.currentCharacterId);
-    const charAvatar = char ? (char.avatar || char.name.charAt(0).toUpperCase()) : 'A';
+    const charAvatar = char ? getAvatarInnerHtml(char.avatar, char.name) : 'A';
 
     if (!messages || messages.length === 0) {
         container.innerHTML = `
@@ -363,7 +397,7 @@ function renderMessages(messages) {
 function appendMessage(role, content, isLastAssistant = false) {
     const container = $('#chat-messages');
     const char = state.characters.find(c => c.id === state.currentCharacterId);
-    const charAvatar = char ? (char.avatar || char.name.charAt(0).toUpperCase()) : 'A';
+    const charAvatar = char ? getAvatarInnerHtml(char.avatar, char.name) : 'A';
 
     const empty = container.querySelector('.empty-chat');
     if (empty) empty.remove();
@@ -868,6 +902,16 @@ function bindEvents() {
     $('#btn-new-character').addEventListener('click', () => openCharacterEditor());
     $('#btn-save-character').addEventListener('click', saveCharacter);
     $('#btn-delete-character').addEventListener('click', deleteCharacter);
+
+    // Avatar upload
+    $('#avatar-preview').addEventListener('click', () => {
+        $('#char-avatar-file').click();
+    });
+    $('#char-avatar-file').addEventListener('change', handleAvatarUpload);
+    $('#avatar-remove-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeAvatar();
+    });
     $('#btn-edit-character').addEventListener('click', () => {
         if (state.currentCharacterId) openCharacterEditor(state.currentCharacterId);
     });
@@ -950,3 +994,127 @@ function closeSidebarOnMobile() {
         $('#sidebar').classList.remove('open');
     }
 }
+
+// ══════════════════════════════════════════════════════════
+//  AVATAR UPLOAD HANDLERS
+// ══════════════════════════════════════════════════════════
+
+function handleAvatarUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        toast('Pilih file gambar (JPG, PNG, GIF, WebP)', 'error');
+        return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+        toast('Ukuran file maksimal 5MB', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const MAX_SIZE = 256;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > MAX_SIZE) {
+                    height *= MAX_SIZE / width;
+                    width = MAX_SIZE;
+                }
+            } else {
+                if (height > MAX_SIZE) {
+                    width *= MAX_SIZE / height;
+                    height = MAX_SIZE;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const dataUrl = canvas.toDataURL('image/webp', 0.85);
+            $('#char-avatar').value = dataUrl;
+            updateAvatarPreview(dataUrl);
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeAvatar() {
+    $('#char-avatar').value = '';
+    $('#char-avatar-file').value = '';
+    updateAvatarPreview('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  CHAT RENAME
+// ══════════════════════════════════════════════════════════
+
+window.startRenameChat = function(chatId) {
+    const chatItem = document.querySelector(`.chat-item[data-id="${chatId}"]`);
+    if (!chatItem) return;
+
+    const chat = state.chats.find(c => c.id === chatId);
+    if (!chat) return;
+
+    const currentTitle = chat.title || 'New Chat';
+
+    chatItem.removeAttribute('onclick');
+    chatItem.innerHTML = `
+        <span class="chat-item-icon">💬</span>
+        <div class="chat-item-rename-container">
+            <input type="text" class="chat-item-rename-input" value="${escapeHtml(currentTitle)}"
+                   data-chat-id="${chatId}" autocomplete="off">
+            <div class="chat-item-rename-actions">
+                <button class="chat-rename-save" onclick="event.stopPropagation(); saveRenameChat('${chatId}')" title="Simpan">✓</button>
+                <button class="chat-rename-cancel" onclick="event.stopPropagation(); cancelRenameChat()" title="Batal">✕</button>
+            </div>
+        </div>
+    `;
+
+    const input = chatItem.querySelector('.chat-item-rename-input');
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveRenameChat(chatId);
+        } else if (e.key === 'Escape') {
+            cancelRenameChat();
+        }
+    });
+};
+
+window.saveRenameChat = async function(chatId) {
+    const input = document.querySelector(`.chat-item-rename-input[data-chat-id="${chatId}"]`);
+    if (!input) return;
+
+    const newTitle = input.value.trim();
+    if (!newTitle) return cancelRenameChat();
+
+    try {
+        await api('PUT', `/api/chat/${chatId}`, { title: newTitle });
+
+        const chat = state.chats.find(c => c.id === chatId);
+        if (chat) chat.title = newTitle;
+
+        renderChatList();
+        toast('Chat renamed!', 'success');
+    } catch (err) {
+        toast(`Error: ${err.message}`, 'error');
+        renderChatList();
+    }
+};
+
+window.cancelRenameChat = function() {
+    renderChatList();
+};
